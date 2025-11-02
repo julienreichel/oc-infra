@@ -26,7 +26,7 @@ jobs:
       - name: Deploy manifests
         run: |
           kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/clusterissuer-letsencrypt-prod
+          kubectl apply -f k8s/clusterissuer-letsencrypt-prod.yaml
           kubectl apply -f k8s/client-secret-db.yaml
           kubectl apply -f k8s/client-postgres.yaml
           kubectl apply -f k8s/provider-secret-db.yaml
