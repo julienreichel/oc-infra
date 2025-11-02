@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: oc-provider-pg-pvc
+  namespace: oc-provider
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oc-provider-pg
+  namespace: oc-provider
+spec:
+  selector:
+    matchLabels:
+      app: oc-provider-pg
+  template:
+    metadata:
+      labels:
+        app: oc-provider-pg
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: oc-provider-db-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: oc-provider-db-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oc-provider-db-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: oc-provider-pg-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oc-provider-pg
+  namespace: oc-provider
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: oc-provider-pg

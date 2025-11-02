@@ -1,0 +1,32 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Write kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Deploy manifests
+        run: |
+          kubectl apply -f k8s/clusterissuer-letsencrypt-prod
+          kubectl apply -f k8s/client-secret-db.yaml
+          kubectl apply -f k8s/client-postgres.yaml
+          kubectl apply -f k8s/provider-secret-db.yaml
+          kubectl apply -f k8s/provider-postgres.yaml
