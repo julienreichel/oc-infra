@@ -26,15 +26,17 @@ kubectl config use-context "k3d-${CLUSTER_NAME}" >/dev/null
 echo "==> Creating namespaces (oc-gateway, oc-provider, oc-client)…"
 kubectl apply -f "${K8S_DIR}/namespace.yaml"
 
-# 3. ingress-nginx
-echo "==> Installing ingress-nginx..."
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+# 3. Traefik
+echo "==> Installing Traefik..."
+helm repo add traefik https://traefik.github.io/charts >/dev/null
+helm repo update >/dev/null
+helm upgrade --install traefik traefik/traefik \
   --namespace oc-gateway \
   --create-namespace \
-  --set controller.ingressClass=nginx \
-  --set controller.ingressClassResource.name=nginx \
-  --set controller.watchIngressWithoutClass=true
+  --set ingressClass.enabled=true \
+  --set ingressClass.isDefaultClass=true \
+  --set service.type=LoadBalancer
+
 
 # 4. cert-manager
 echo "==> Installing cert-manager..."
@@ -51,7 +53,7 @@ kubectl apply -f "${K8S_DIR}/clusterissuer-selfsigned-local.yaml"
 # 6. local Postgres
 echo "==> Deploying provider Postgres..."
 kubectl apply -n oc-provider -f "${K8S_DIR}/provider-postgres.yaml"
-kubectl apply -n oc-provider -f "${K8S_DIR}/providersecret-db.yaml"
+kubectl apply -n oc-provider -f "${K8S_DIR}/provider-secret-db.yaml"
 
 echo "==> Deploying client Postgres..."
 kubectl apply -n oc-client -f "${K8S_DIR}/client-postgres.yaml"

@@ -40,11 +40,19 @@ You said you have **Infomaniak Public Cloud** → we use their **managed Kuberne
    kubectl create namespace oc-gateway
    ```
 
-6. Install **Nginx Ingress** into the cluster (either from Infomaniak’s template or Helm). Example via Helm:
+6. Install **Traefik** into the cluster (either from Infomaniak’s template or Helm). Example via Helm:
 
    ```bash
-   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-   helm install ingress-nginx ingress-nginx/ingress-nginx -n oc-gateway
+   helm repo add traefik https://traefik.github.io/charts
+   helm repo update
+
+   helm install traefik traefik/traefik \
+   --namespace oc-gateway \
+   --create-namespace \
+   --set ingressClass.enabled=true \
+   --set ingressClass.isDefaultClass=true \
+   --set service.type=LoadBalancer
+
    ```
 
    That will create a **LoadBalancer** → Infomaniak will give you a public IP. (You can see it with `kubectl get svc -n oc-gateway`.) ([infomaniak.com][3])
