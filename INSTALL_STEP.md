@@ -123,69 +123,6 @@ cert-manager-cainjector-xxxxx              1/1     Running   0          30s
 cert-manager-webhook-xxxxx                 1/1     Running   0          30s
 ```
 
-If those 3 are **Running**, step 1 is done ✅
-
----
-
-## 3. Tell cert-manager to use Let’s Encrypt
-
-Right now cert-manager is like “I’m ready, but... where do I get certs from?”
-We must create an object called a **ClusterIssuer**.
-
-Think: **ClusterIssuer = recipe for getting certificates.**
-
-### 3.2. Apply it to the cluster
-
-From **`clusterissuer-letsencrypt-prod.yaml`**
-
-```bash
-kubectl apply -f clusterissuer-letsencrypt-prod.yaml
-```
-
-Check:
-
-```bash
-kubectl get clusterissuer
-```
-
-You should see:
-
-```text
-NAME              READY   AGE
-letsencrypt-prod  True    5s
-```
-
-If it says `True` → perfect.
-If it says `False` → do `kubectl describe clusterissuer letsencrypt-prod` to see why.
-
-Now cert-manager knows “if anyone asks for a cert and says they use `letsencrypt-prod`, I know how to do it.”
-
----
-
-### 3.3. Apply the ingress (optional)
-
-Now apply this file:
-
-```bash
-kubectl apply -f oc-provider-frontend/k8s/ingress.yaml
-```
-
-(If you keep your k8s files in GitHub and deploy from CI, then just commit & push; but for now, we can do it by hand.)
-
-
-### 3.4. Test in the browser
-
-Now open:
-
-* `https://provider.on-track.ch`
-* `https://client.on-track.ch`
-
-If all is good → green lock 🔒
-
-If it’s not yet green → try `http://...` first to see if the challenge is still running.
-
----
-
 ## 4. Create a container registry (where to push images)
 
 You need any Docker registry reachable from Infomaniak. Options:
@@ -200,58 +137,7 @@ Let’s pick **GHCR**.
 2. In **each repo**, add Secrets:
 
    * `CR_PAT` → your token
-   * `REGISTRY` → `ghcr.io`
-   * `IMAGE_NAME` → `ghcr.io/<your-gh-username>/<repo-name>`
    * `KUBECONFIG_CONTENT` (paste the kubeconfig you downloaded from Infomaniak — base64 is nicer but inline works)
-
-
-### 4.1. Create a secret in `oc-provider`
-
-Use **the same token** you used in GitHub (`CR_PAT` with `read:packages`).
-
-On your laptop:
-
-```bash
-kubectl create secret docker-registry ghcr-creds \
-  --docker-server=ghcr.io \
-  --docker-username=<your-github-username> \
-  --docker-password='<your-personal-access-token>' \
-  --docker-email=none@none \
-  -n oc-provider
-```
-
-⚠️ Replace:
-
-* `<your-github-username>`
-* `<your-personal-access-token>`
-
-Now the cluster has a secret called `ghcr-creds` in the **right namespace** (`oc-provider`).
-
----
-
-## 9. Database on Infomaniak
-
-Right now, you only need **empty backends** so we can just:
-
-1. In Infomaniak → create **Managed PostgreSQL** (one called `oc-provider-pg`, another `oc-client-pg`).
-2. Copy connection strings.
-3. In k8s, create secrets:
-
-```bash
-kubectl create secret generic oc-provider-db \
-  --from-literal=DATABASE_URL=postgres://user:pass@host:5432/dbname \
-  -n oc-provider
-```
-
-4. In your **backend Deployment**, mount the env:
-
-```yaml
-envFrom:
-  - secretRef:
-      name: oc-provider-db
-```
-
-For now NestJS won’t use it (empty app), but it’s wired.
 
 ---
 
