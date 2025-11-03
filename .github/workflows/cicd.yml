@@ -91,5 +91,5 @@ jobs:
         shell: bash
         run: |
           for ns in oc-provider oc-dev-provider oc-client oc-dev-client; do
-            kubectl -n "$ns" apply -f k8s/db/postgres.tmpl.yaml
+            kubectl -n "$ns" apply -f k8s/postgres.yaml
           done

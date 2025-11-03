@@ -1,70 +1,46 @@
-name: Reusable Deploy (Env-agnostic)
-
+name: Reusable Deploy
 on:
   workflow_call:
     inputs:
-      app_kind:                  # "backend" | "frontend"
-        required: true
-        type: string
-      image_name:                # e.g. ghcr.io/on-track/oc-provider-backend
-        required: true
-        type: string
-      namespace:                 # target k8s namespace (env-specific, passed by caller)
-        required: true
-        type: string
-      host:                      # required if frontend
-        required: false
-        type: string
+      app_kind:   { required: true, type: string }
+      image_name: { required: true, type: string }
+      namespace:  { required: true, type: string }
+      host:       { required: false, type: string }
     secrets:
-      CR_PAT:
-        required: true
-      KUBECONFIG_CONTENT:
-        required: true
+      CR_PAT: { required: true }
+      KUBECONFIG_CONTENT: { required: true }
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout caller repository
-        uses: actions/checkout@v4
-
-      - name: Login to GHCR
-        run: echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Build & Push image
-        run: |
-          TAG=${{ github.sha }}
-          docker build -t ${{ inputs.image_name }}:${TAG} .
-          docker push ${{ inputs.image_name }}:${TAG}
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
 
       - name: Setup kubeconfig
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBECONFIG_CONTENT }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
 
-      - name: Deploy Deployment (template image)
+      - name: Apply Deployment
         run: |
           TAG=${{ github.sha }}
-          sed "s|IMAGE_PLACEHOLDER|${{ inputs.image_name }}:${TAG}|g" k8s/deployment.yaml | \
-            kubectl -n "${{ inputs.namespace }}" apply -f -
+          IMAGE="${{ inputs.image_name }}:${TAG}"
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml \
+            | kubectl -n "${{ inputs.namespace }}" apply -f -
 
-      - name: Deploy Service
+      - name: Apply Service
         run: kubectl -n "${{ inputs.namespace }}" apply -f k8s/service.yaml
 
-      - name: Deploy Ingress (frontend only)
+      - name: Apply Ingress (frontend only)
         if: ${{ inputs.app_kind == 'frontend' }}
         run: |
-          if [ -z "${{ inputs.host }}" ]; then
-            echo "host input is required for frontend apps" >&2
-            exit 1
-          fi
-          sed "s|__HOST__|${{ inputs.host }}|g" k8s/ingress.yaml | \
-            kubectl -n "${{ inputs.namespace }}" apply -f -
+          [ -n "${{ inputs.host }}" ] || { echo "host required"; exit 1; }
+          sed "s|__HOST__|${{ inputs.host }}|g" k8s/ingress.yaml \
+            | kubectl -n "${{ inputs.namespace }}" apply -f -
 
-      - name: Show rollout status
+      - name: Rollout status
         run: |
-          DEPLOY_NAME=$(grep -m1 -E '^  name:\s' k8s/deployment.yaml | awk '{print $2}')
-          if [ -n "$DEPLOY_NAME" ]; then
-            kubectl -n "${{ inputs.namespace }}" rollout status deploy/$DEPLOY_NAME --timeout=120s || true
-          fi
+          DEPLOY_NAME=$(grep -m1 -E '^  name:' k8s/deployment.yaml | awk '{print $2}')
+          kubectl -n "${{ inputs.namespace }}" rollout status deploy/$DEPLOY_NAME --timeout=120s || true
