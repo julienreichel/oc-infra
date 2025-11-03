@@ -51,17 +51,43 @@ echo "==> Applying local self-signed ClusterIssuer (selfsigned-local)…"
 kubectl apply -f "${K8S_DIR}/clusterissuer-selfsigned-local.yaml"
 
 # 6. local Postgres
+create_db_secrets () {
+  local ns="$1"
+  local db_name="$2"
+  local db_user="$3"
+  local db_pass="$4"
+
+  echo "==> Creating/Updating DB secrets in namespace '${ns}'"
+  # Secret used by the Postgres pod
+  kubectl -n "${ns}" create secret generic db-secret \
+    --from-literal=POSTGRES_DB="${db_name}" \
+    --from-literal=POSTGRES_USER="${db_user}" \
+    --from-literal=POSTGRES_PASSWORD="${db_pass}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Secret often used by apps (DATABASE_URL), service is 'pg' within the same ns
+  kubectl -n "${ns}" create secret generic db \
+    --from-literal=DATABASE_URL="postgres://${db_user}:${db_pass}@pg:5432/${db_name}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+}
+
+# Local defaults (same across namespaces; change if you want different creds per ns)
+LOCAL_DB_NAME="db"
+LOCAL_DB_USER="app"
+LOCAL_DB_PASS="StrongLocalPass"   # or read from env if you prefer
+
+create_db_secrets "oc-provider" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
+create_db_secrets "oc-client"   "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
+
 echo "==> Deploying provider Postgres..."
-kubectl apply -n oc-provider -f "${K8S_DIR}/provider-postgres.yaml"
-kubectl apply -n oc-provider -f "${K8S_DIR}/provider-secret-db.yaml"
+kubectl apply -n oc-provider -f "${K8S_DIR}/postgres.yaml"
 
 echo "==> Deploying client Postgres..."
-kubectl apply -n oc-client -f "${K8S_DIR}/client-postgres.yaml"
-kubectl apply -n oc-client -f "${K8S_DIR}/client-secret-db.yaml"
+kubectl apply -n oc-client -f "${K8S_DIR}/postgres.yaml"
 
 echo "==> Waiting for Postgres pods to be ready..."
-kubectl wait --for=condition=ready pod -l app=oc-provider-pg -n oc-provider --timeout=60s || true
-kubectl wait --for=condition=ready pod -l app=oc-client-pg -n oc-client --timeout=60s || true
+kubectl wait --for=condition=ready pod -l app=pg -n oc-provider --timeout=60s || true
+kubectl wait --for=condition=ready pod -l app=pg -n oc-client --timeout=60s || true
 
 # 7. Deploy apps (call the other script)
 echo "==> Deploying apps (calling redeploy-apps.sh)…"
