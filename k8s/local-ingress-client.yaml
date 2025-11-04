@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oc-client-ingress
+  namespace: oc-client
+  annotations:
+    cert-manager.io/cluster-issuer: local-ca-issuer
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - client.localhost
+      secretName: client-localhost-tls
+  rules:
+    - host: client.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oc-client-frontend
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: oc-client-backend
+                port:
+                  number: 80
