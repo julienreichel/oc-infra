@@ -111,12 +111,15 @@ run_migration_if_exists() {
     # Get job name from manifest
     JOB_NAME=$(grep -E "^  name:" "${app_dir}/k8s/migration-job.yaml" | awk '{print $2}')
     
+    # Get the app name from the directory path
+    APP_NAME=$(basename "${app_dir}")
+    
     # Clean up any existing migration job
     kubectl delete job "${JOB_NAME}" -n "${ns}" --ignore-not-found=true
     kubectl wait --for=delete job/"${JOB_NAME}" -n "${ns}" --timeout=60s || true
     
     # Apply migration job with image substitution
-    sed "s|IMAGE_PLACEHOLDER|local/${ns##*-}:dev|g" "${app_dir}/k8s/migration-job.yaml" | \
+    sed "s|IMAGE_PLACEHOLDER|local/${APP_NAME}:dev|g" "${app_dir}/k8s/migration-job.yaml" | \
       kubectl -n "${ns}" apply -f -
     
     # Wait for migration to complete
