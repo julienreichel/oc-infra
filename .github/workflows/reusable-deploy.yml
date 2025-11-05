@@ -43,6 +43,19 @@ jobs:
           sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/migration-job.yaml | \
             kubectl -n "${{ inputs.namespace }}" apply -f -
           
+          echo "Waiting for pod to start..."
+          # Wait for the pod to be created
+          for i in {1..60}; do
+            POD=$(kubectl -n "${{ inputs.namespace }}" get pods -l job-name=$JOB_NAME -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            [ -n "$POD" ] && break
+            sleep 2
+          done
+          if [ -z "${POD:-}" ]; then
+            echo "Pod not created for migration job"; exit 1
+          fi
+          # Stream logs while job runs
+          kubectl -n "${{ inputs.namespace }}" logs -f "job/$JOB_NAME" --all-containers=true & LOG_PID=$!
+          
           echo "Waiting for migration job '$JOB_NAME' to complete..."
           kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=300s
           
