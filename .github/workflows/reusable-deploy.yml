@@ -37,7 +37,7 @@ jobs:
             kubectl -n "${{ inputs.namespace }}" apply -f -
           
           # Get the job name from the manifest (since it's hardcoded in each project)
-          JOB_NAME=$(sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/migration-job.yaml | grep -E "^  name:" | awk '{print $2}')
+          JOB_NAME=$(grep -E "^  name:" k8s/migration-job.yaml | awk '{print $2}')
           
           echo "Waiting for migration job '$JOB_NAME' to complete..."
           kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=300s
