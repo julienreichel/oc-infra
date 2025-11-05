@@ -35,7 +35,8 @@ helm upgrade --install traefik traefik/traefik \
   --create-namespace \
   --set ingressClass.enabled=true \
   --set ingressClass.isDefaultClass=true \
-  --set service.type=LoadBalancer
+  --set service.type=LoadBalancer \
+  --set providers.kubernetesIngress.allowExternalNameServices=true
 
 
 # 4. cert-manager

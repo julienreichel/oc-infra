@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: oc-client-backend-dev
-  namespace: oc-client
+  name: oc-provider-backend-dev
+  namespace: oc-provider
 spec:
   type: ExternalName
   externalName: host.k3d.internal

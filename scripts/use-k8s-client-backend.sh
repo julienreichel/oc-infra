@@ -21,10 +21,9 @@ kubectl -n "$NS" patch ingress "$INGRESS_NAME" --type='json' \
 echo "Scaling up $BACKEND_DEPLOYMENT..."
 kubectl -n "$NS" scale deployment "$BACKEND_DEPLOYMENT" --replicas=1
 
-# 3️⃣ Remove dev service and endpoints
+# 3️⃣ Remove dev service (ExternalName service)
 echo "Cleaning up dev service..."
 kubectl -n "$NS" delete service oc-client-backend-dev --ignore-not-found=true
-kubectl -n "$NS" delete endpoints oc-client-backend-dev --ignore-not-found=true
 
 if [[ -f "$PID_FILE" ]]; then
   echo "Stopping port-forward..."
