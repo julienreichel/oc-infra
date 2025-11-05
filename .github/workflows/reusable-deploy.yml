@@ -30,14 +30,18 @@ jobs:
           TAG=${{ github.sha }}
           IMAGE="${{ inputs.image_name }}:${TAG}"
           
+          # Get the job name from the manifest (since it's hardcoded in each project)
+          JOB_NAME=$(grep -E "^  name:" k8s/migration-job.yaml | awk '{print $2}')
+          
+          echo "Cleaning up previous migration job '$JOB_NAME' if it exists..."
+          kubectl delete job $JOB_NAME -n "${{ inputs.namespace }}" --ignore-not-found=true
+          kubectl wait --for=delete job/$JOB_NAME -n "${{ inputs.namespace }}" --timeout=60s || true
+          
           echo "Running database migrations..."
           
           # Apply the project's migration job with image substitution
           sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/migration-job.yaml | \
             kubectl -n "${{ inputs.namespace }}" apply -f -
-          
-          # Get the job name from the manifest (since it's hardcoded in each project)
-          JOB_NAME=$(grep -E "^  name:" k8s/migration-job.yaml | awk '{print $2}')
           
           echo "Waiting for migration job '$JOB_NAME' to complete..."
           kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=300s
