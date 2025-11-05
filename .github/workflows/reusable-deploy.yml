@@ -7,7 +7,6 @@ on:
       namespace:  { required: true, type: string }
       host:       { required: false, type: string }
       run_migrations: { required: false, type: boolean, default: false }
-      migration_command: { required: false, type: string, default: "npm run db:migrate" }
     secrets:
       CR_PAT: { required: true }
       KUBECONFIG_CONTENT: { required: true }
@@ -30,17 +29,17 @@ jobs:
         run: |
           TAG=${{ github.sha }}
           IMAGE="${{ inputs.image_name }}:${TAG}"
-          TIMESTAMP=$(date +%s)
-          JOB_NAME="migration-job-${TIMESTAMP}"
           
-          echo "Creating migration job: $JOB_NAME"
+          echo "Running database migrations..."
           
-          # Use the calling project's migration job template with substitutions
+          # Apply the project's migration job with image substitution
           sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/migration-job.yaml | \
-            sed "s|JOB_NAME_PLACEHOLDER|$JOB_NAME|g" | \
             kubectl -n "${{ inputs.namespace }}" apply -f -
           
-          echo "Waiting for migration job to complete..."
+          # Get the job name from the manifest (since it's hardcoded in each project)
+          JOB_NAME=$(sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/migration-job.yaml | grep -E "^  name:" | awk '{print $2}')
+          
+          echo "Waiting for migration job '$JOB_NAME' to complete..."
           kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=300s
           
           # Check job status and logs
