@@ -35,15 +35,10 @@ jobs:
           
           echo "Creating migration job: $JOB_NAME"
           
-          # Checkout oc-infra repository to access migration job template
-          git clone --depth 1 https://github.com/julienreichel/oc-infra.git /tmp/oc-infra
-          
-          # Apply migration job template with substitutions
-          sed "s|JOB_NAME_PLACEHOLDER|$JOB_NAME|g" /tmp/oc-infra/k8s/migration-job.yaml | \
-            sed "s|NAMESPACE_PLACEHOLDER|${{ inputs.namespace }}|g" | \
-            sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" | \
-            sed "s|MIGRATION_COMMAND_PLACEHOLDER|${{ inputs.migration_command }}|g" | \
-            kubectl apply -f -
+          # Use the calling project's migration job template with substitutions
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/migration-job.yaml | \
+            sed "s|JOB_NAME_PLACEHOLDER|$JOB_NAME|g" | \
+            kubectl -n "${{ inputs.namespace }}" apply -f -
           
           echo "Waiting for migration job to complete..."
           kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=300s
