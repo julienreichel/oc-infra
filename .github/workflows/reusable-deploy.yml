@@ -24,6 +24,13 @@ jobs:
           echo "${{ secrets.KUBECONFIG_CONTENT }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
+      - name: Debug cluster/namespace
+        run: |
+          echo "KUBECONFIG points to:" && kubectl config current-context
+          kubectl config get-contexts
+          kubectl cluster-info
+          echo "NS=${{ inputs.namespace }}"
+
       - name: Run Database Migrations
         if: ${{ inputs.run_migrations }}
         run: |
