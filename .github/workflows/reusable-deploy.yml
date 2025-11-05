@@ -64,7 +64,7 @@ jobs:
           kubectl -n "${{ inputs.namespace }}" logs -f "job/$JOB_NAME" --all-containers=true & LOG_PID=$!
           
           echo "Waiting for migration job '$JOB_NAME' to complete..."
-          kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=300s
+          kubectl -n "${{ inputs.namespace }}" wait --for=condition=complete job/$JOB_NAME --timeout=120s
           
           # Check job status and logs
           JOB_STATUS=$(kubectl -n "${{ inputs.namespace }}" get job $JOB_NAME -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')
