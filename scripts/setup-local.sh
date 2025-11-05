@@ -98,6 +98,48 @@ kubectl wait --for=condition=ready pod -l app=pg -n oc-client --timeout=60s || t
 echo "==> Deploying apps (calling redeploy-apps.sh)…"
 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/redeploy-apps.sh"
 
+# 8. Run database migrations for backends
+echo "==> Running database migrations..."
+
+run_migration_if_exists() {
+  local ns="$1"
+  local app_dir="$2"
+  
+  if [[ -f "${app_dir}/k8s/migration-job.yaml" ]]; then
+    echo "==> Running migration for ${ns}..."
+    
+    # Get job name from manifest
+    JOB_NAME=$(grep -E "^  name:" "${app_dir}/k8s/migration-job.yaml" | awk '{print $2}')
+    
+    # Clean up any existing migration job
+    kubectl delete job "${JOB_NAME}" -n "${ns}" --ignore-not-found=true
+    kubectl wait --for=delete job/"${JOB_NAME}" -n "${ns}" --timeout=60s || true
+    
+    # Apply migration job with image substitution
+    sed "s|IMAGE_PLACEHOLDER|local/${ns##*-}:dev|g" "${app_dir}/k8s/migration-job.yaml" | \
+      kubectl -n "${ns}" apply -f -
+    
+    # Wait for migration to complete
+    echo "   Waiting for migration job '${JOB_NAME}' to complete..."
+    kubectl -n "${ns}" wait --for=condition=complete job/"${JOB_NAME}" --timeout=300s
+    
+    # Check status and show logs if failed
+    JOB_STATUS=$(kubectl -n "${ns}" get job "${JOB_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "False")
+    if [[ "$JOB_STATUS" != "True" ]]; then
+      echo "   ⚠️  Migration job failed. Logs:"
+      kubectl -n "${ns}" logs job/"${JOB_NAME}" --tail=20 || true
+    else
+      echo "   ✅ Migration completed successfully"
+    fi
+  else
+    echo "   No migration-job.yaml found for ${ns}, skipping..."
+  fi
+}
+
+# Run migrations for each backend that has a migration job
+run_migration_if_exists "oc-provider" "${WORKSPACE_DIR}/oc-provider-backend"
+run_migration_if_exists "oc-client" "${WORKSPACE_DIR}/oc-client-backend"
+
 echo ""
 echo "======================================================"
 echo "Local OC environment is up 🟢"
