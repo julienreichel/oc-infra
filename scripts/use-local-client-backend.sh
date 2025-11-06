@@ -6,7 +6,7 @@ BACKEND_DEPLOYMENT="oc-client-backend"
 DEV_SERVICE_FILE="k8s/oc-client-backend-dev-svc.yaml"
 INGRESS_NAME="oc-client-ingress"
 DB_SERVICE="pg"
-LOCAL_DB_PORT=5433
+LOCAL_DB_PORT=5432
 REMOTE_DB_PORT=5432
 
 echo "Switching to local backend mode..."
@@ -46,6 +46,6 @@ PF_PID=$!
 echo $PF_PID > "$PID_FILE"
 sleep 2
 echo "Port-forward active (PID: $PF_PID). To stop it: kill \$(cat $PID_FILE)"
-echo "Postgres URL: postgres://app:StrongLocalPass@localhost:${LOCAL_DB_PORT}/db"
+echo "Postgres URL: postgresql://app:StrongLocalPass@localhost:${LOCAL_DB_PORT}/db"
 
 echo "Done! Your local backend on http://localhost:3000 now handles /api for https://client.localhost"

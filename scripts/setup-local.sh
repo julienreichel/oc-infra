@@ -68,12 +68,12 @@ create_db_secrets () {
 
   # Secret often used by apps (DATABASE_URL), service is 'pg' within the same ns
   kubectl -n "${ns}" create secret generic db \
-    --from-literal=DATABASE_URL="postgres://${db_user}:${db_pass}@pg:5432/${db_name}" \
+    --from-literal=DATABASE_URL="postgresql://${db_user}:${db_pass}@pg:5432/${db_name}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   # Create namespace-specific secret expected by deployments
   kubectl -n "${ns}" create secret generic "${ns}-db" \
-    --from-literal=DATABASE_URL="postgres://${db_user}:${db_pass}@pg:5432/${db_name}" \
+    --from-literal=DATABASE_URL="postgresql://${db_user}:${db_pass}@pg:5432/${db_name}" \
     --dry-run=client -o yaml | kubectl apply -f -
 }
 

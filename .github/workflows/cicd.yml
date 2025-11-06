@@ -59,7 +59,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl -n "$ns" create secret generic db \
-            --from-literal=DATABASE_URL="postgres://${USR}:${PWD}@pg:5432/${DB}" \
+            --from-literal=DATABASE_URL="postgresql://${USR}:${PWD}@pg:5432/${DB}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
   deploy:
