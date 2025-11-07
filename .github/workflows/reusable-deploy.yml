@@ -7,7 +7,6 @@ on:
       namespace:  { required: true, type: string }
       host:       { required: false, type: string }
       run_migrations: { required: false, type: boolean, default: false }
-      client_base_url: { required: false, type: string }
     secrets:
       CR_PAT: { required: true }
       KUBECONFIG_CONTENT: { required: true }
@@ -64,11 +63,21 @@ jobs:
           
           echo "Migration completed successfully"
 
-      - name: Create Config Secret
-        if: ${{ inputs.client_base_url != '' }}
+      - name: Create Config Secret for Provider (when deploying client frontend)
+        if: ${{ inputs.app_kind == 'frontend' && inputs.host != '' && contains(inputs.namespace, 'client') }}
         run: |
-          kubectl -n "${{ inputs.namespace }}" create secret generic config \
-            --from-literal=CLIENT_BASE_URL="${{ inputs.client_base_url }}" \
+          # Determine provider namespace from client namespace
+          PROVIDER_NS="${{ inputs.namespace }}"
+          PROVIDER_NS="${PROVIDER_NS/client/provider}"
+          
+          # Create CLIENT_BASE_URL for provider namespace using the client host
+          CLIENT_BASE_URL="https://${{ inputs.host }}/api/"
+          
+          echo "Creating config secret in provider namespace: $PROVIDER_NS"
+          echo "CLIENT_BASE_URL: $CLIENT_BASE_URL"
+          
+          kubectl -n "$PROVIDER_NS" create secret generic config \
+            --from-literal=CLIENT_BASE_URL="$CLIENT_BASE_URL" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Deployment
