@@ -7,6 +7,7 @@ on:
       namespace:  { required: true, type: string }
       host:       { required: false, type: string }
       run_migrations: { required: false, type: boolean, default: false }
+      client_base_url: { required: false, type: string }
     secrets:
       CR_PAT: { required: true }
       KUBECONFIG_CONTENT: { required: true }
@@ -62,6 +63,13 @@ jobs:
           fi
           
           echo "Migration completed successfully"
+
+      - name: Create Config Secret
+        if: ${{ inputs.client_base_url != '' }}
+        run: |
+          kubectl -n "${{ inputs.namespace }}" create secret generic config \
+            --from-literal=CLIENT_BASE_URL="${{ inputs.client_base_url }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Deployment
         run: |
