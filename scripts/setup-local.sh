@@ -83,7 +83,23 @@ LOCAL_DB_USER="app"
 LOCAL_DB_PASS="StrongLocalPass"   # or read from env if you prefer
 
 create_db_secrets "oc-provider" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
-create_db_secrets "oc-client"   "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
+create_db_secrets "oc-client" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
+
+# Create config secrets for local development
+echo "==> Creating config secrets..."
+kubectl -n oc-provider create secret generic config \
+  --from-literal=CLIENT_BASE_URL="https://client.localhost/api/" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Create dummy registry secrets for local development (since we use local images)
+echo "==> Creating registry secrets..."
+for ns in oc-provider oc-client; do
+  kubectl -n "$ns" create secret docker-registry ghcr-creds \
+    --docker-server=ghcr.io \
+    --docker-username=dummy \
+    --docker-password=dummy \
+    --dry-run=client -o yaml | kubectl apply -f -
+done
 
 echo "==> Deploying provider Postgres..."
 kubectl apply -n oc-provider -f "${K8S_DIR}/postgres.yaml"
