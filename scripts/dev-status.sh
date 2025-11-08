@@ -177,11 +177,23 @@ echo -n "Provider: "
 if $provider_frontend_local && $provider_backend_local; then
     echo -e "${GREEN}Full Local Development${NC}"
 elif $provider_frontend_k8s && $provider_backend_k8s; then
-    echo -e "${BLUE}Full Kubernetes${NC}"
+    if $provider_backend_local; then
+        echo -e "${RED}⚠ CONFLICT: Both Local & K8s Backend Running${NC}"
+        echo "  - Frontend: K8s"
+        echo "  - Backend: K8s + Local (port 3001) - Consider stopping local backend"
+    else
+        echo -e "${BLUE}Full Kubernetes${NC}"
+    fi
 else
     echo -e "${YELLOW}Mixed Mode${NC}"
     [ $provider_frontend_local = true ] && echo "  - Frontend: Local" || echo "  - Frontend: K8s"
-    [ $provider_backend_local = true ] && echo "  - Backend: Local" || echo "  - Backend: K8s"
+    if $provider_backend_local && $provider_backend_k8s; then
+        echo -e "  - Backend: ${RED}BOTH Local & K8s (conflict!)${NC}"
+    elif $provider_backend_local; then
+        echo "  - Backend: Local"
+    else
+        echo "  - Backend: K8s"
+    fi
 fi
 
 # Client summary
@@ -189,11 +201,23 @@ echo -n "Client:   "
 if $client_frontend_local && $client_backend_local; then
     echo -e "${GREEN}Full Local Development${NC}"
 elif $client_frontend_k8s && $client_backend_k8s; then
-    echo -e "${BLUE}Full Kubernetes${NC}"
+    if $client_backend_local; then
+        echo -e "${RED}⚠ CONFLICT: Both Local & K8s Backend Running${NC}"
+        echo "  - Frontend: K8s"
+        echo "  - Backend: K8s + Local (port 3000) - Consider stopping local backend"
+    else
+        echo -e "${BLUE}Full Kubernetes${NC}"
+    fi
 else
     echo -e "${YELLOW}Mixed Mode${NC}"
     [ $client_frontend_local = true ] && echo "  - Frontend: Local" || echo "  - Frontend: K8s"
-    [ $client_backend_local = true ] && echo "  - Backend: Local" || echo "  - Backend: K8s"
+    if $client_backend_local && $client_backend_k8s; then
+        echo -e "  - Backend: ${RED}BOTH Local & K8s (conflict!)${NC}"
+    elif $client_backend_local; then
+        echo "  - Backend: Local"
+    else
+        echo "  - Backend: K8s"
+    fi
 fi
 
 echo ""
@@ -226,3 +250,17 @@ echo "./scripts/use-k8s-provider-backend.sh     - Switch provider backend to K8s
 echo "./scripts/use-local-client-backend.sh     - Switch client backend to local"  
 echo "./scripts/use-k8s-client-backend.sh       - Switch client backend to K8s"
 echo "./scripts/local-backend-env.sh            - Show local backend env vars"
+
+# Show cleanup commands if conflicts detected
+if ($provider_backend_local && $provider_backend_k8s) || ($client_backend_local && $client_backend_k8s); then
+    echo ""
+    echo "🧹 Cleanup Commands (for conflicts)"
+    echo "-----------------------------------"
+    if $provider_backend_local && $provider_backend_k8s; then
+        echo "pkill -f 'node.*3001'                      - Stop local provider backend"
+    fi
+    if $client_backend_local && $client_backend_k8s; then
+        echo "pkill -f 'node.*3000'                      - Stop local client backend"
+    fi
+    echo "lsof -i :3000 -i :3001                        - Check what's using backend ports"
+fi

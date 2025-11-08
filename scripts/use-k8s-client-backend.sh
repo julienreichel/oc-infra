@@ -32,3 +32,7 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 echo "Backend and ingress restored to cluster version."
+echo ""
+echo "💡 Note: If you have a local backend running on port 3000, you may want to stop it to avoid confusion."
+echo "   Check with: lsof -i :3000"
+echo "   Kill with: pkill -f 'node.*3000' (or stop your dev server manually)"
