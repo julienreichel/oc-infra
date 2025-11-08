@@ -8,5 +8,5 @@ spec:
   externalName: host.k3d.internal
   ports:
     - name: http
-      port: 9000
-      targetPort: 9000
+      port: 9001
+      targetPort: 9001

@@ -25,4 +25,4 @@ kubectl -n "$NS" patch ingress "$INGRESS_NAME" --type='json' \
   ]'
 
 
-echo "Done! Your local frontend on http://localhost:6000 now handles /api for https://client.localhost"
+echo "Done! Your local frontend on http://localhost:9000 now handles /api for https://client.localhost"

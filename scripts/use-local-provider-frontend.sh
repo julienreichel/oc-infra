@@ -21,8 +21,8 @@ echo "Patching ingress $INGRESS_NAME to use local frontend..."
 kubectl -n "$NS" patch ingress "$INGRESS_NAME" --type='json' \
   -p='[
     {"op":"replace","path":"/spec/rules/0/http/paths/0/backend/service/name","value":"oc-provider-frontend-dev"},
-    {"op":"replace","path":"/spec/rules/0/http/paths/0/backend/service/port/number","value":9000}
+    {"op":"replace","path":"/spec/rules/0/http/paths/0/backend/service/port/number","value":9001}
   ]'
 
 
-echo "Done! Your local frontend on http://localhost:6000 now handles /api for https://provider.localhost"
+echo "Done! Your local frontend on http://localhost:9001 now handles /api for https://provider.localhost"
