@@ -121,10 +121,6 @@ kubectl wait --for=condition=ready pod -l app=pg -n oc-client --timeout=60s || t
 echo "==> Deploying apps (calling redeploy-apps.sh)…"
 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/redeploy-apps.sh"
 
-# 7.5. Fix TLS settings for K8s inter-service communication
-echo "==> Fixing TLS settings for backend deployments..."
-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fix-k8s-tls.sh"
-
 # 8. Run database migrations for backends
 echo "==> Running database migrations..."
 
