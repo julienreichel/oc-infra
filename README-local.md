@@ -172,10 +172,20 @@ To fix this:
    kubectl get secret local-ca-secret -n cert-manager -o jsonpath="{.data['tls\.crt']}" | base64 --decode > local-ca.crt
    ```
 
-2. **Add it to macOS system keychain**
+2. **Add it to macOS system keychain with proper trust settings**
 
    ```bash
    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain local-ca.crt
+   sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.keychain local-ca.crt
+   ```
+
+   **Alternative method (sometimes more reliable):**
+   ```bash
+   # Import the certificate
+   sudo security import local-ca.crt -k /Library/Keychains/System.keychain
+   
+   # Set trust settings explicitly for SSL
+   sudo security add-trusted-cert -d -r trustRoot -p ssl -p smime -k /Library/Keychains/System.keychain local-ca.crt
    ```
 
 3. Refresh `https://provider.localhost` → no more warning ✅
