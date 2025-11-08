@@ -16,38 +16,39 @@ fix_deployment_tls() {
         return
     fi
     
-    # Check if the env var is already set
-    if kubectl -n "$namespace" get deployment "$deployment" -o yaml | grep -q "NODE_TLS_REJECT_UNAUTHORIZED"; then
-        echo "   ✅ NODE_TLS_REJECT_UNAUTHORIZED already configured for $deployment"
+    # Check if envFrom config secret is already configured
+    if kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.template.spec.containers[0].envFrom}' | grep -q '"name":"config"'; then
+        echo "   ✅ envFrom config secret already configured for $deployment (NODE_TLS_REJECT_UNAUTHORIZED available)"
         return
     fi
     
-    echo "   🔧 Adding NODE_TLS_REJECT_UNAUTHORIZED=0 to $deployment..."
+    echo "   🔧 Adding envFrom config secret to $deployment..."
     
-    # Add the environment variable from the config secret
-    kubectl -n "$namespace" patch deployment "$deployment" --type='json' -p='[
-        {
-            "op": "add",
-            "path": "/spec/template/spec/containers/0/env/-",
-            "value": {
-                "name": "NODE_TLS_REJECT_UNAUTHORIZED",
-                "valueFrom": {
-                    "secretKeyRef": {
-                        "name": "config",
-                        "key": "NODE_TLS_REJECT_UNAUTHORIZED"
-                    }
-                }
+    # Check if envFrom array exists, if not create it
+    if ! kubectl -n "$namespace" get deployment "$deployment" -o jsonpath='{.spec.template.spec.containers[0].envFrom}' | grep -q '\['; then
+        # Create envFrom array with config secret
+        kubectl -n "$namespace" patch deployment "$deployment" --type='json' -p='[
+            {
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/envFrom",
+                "value": [{"secretRef": {"name": "config"}}]
             }
-        }
-    ]' || {
-        echo "   ⚠️  Failed to patch $deployment (might already have env vars configured differently)"
+        ]'
+    else
+        # Add config secret to existing envFrom array
+        kubectl -n "$namespace" patch deployment "$deployment" --type='json' -p='[
+            {
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/envFrom/-",
+                "value": {"secretRef": {"name": "config"}}
+            }
+        ]'
+    fi || {
+        echo "   ⚠️  Failed to patch $deployment"
         echo "   💡 You may need to add this manually to the deployment manifest:"
-        echo "      env:"
-        echo "        - name: NODE_TLS_REJECT_UNAUTHORIZED"
-        echo "          valueFrom:"
-        echo "            secretKeyRef:"
-        echo "              name: config"
-        echo "              key: NODE_TLS_REJECT_UNAUTHORIZED"
+        echo "      envFrom:"
+        echo "        - secretRef:"
+        echo "            name: config"
     }
 }
 
