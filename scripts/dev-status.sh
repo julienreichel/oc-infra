@@ -9,6 +9,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
 # Helper function to check if a port is listening locally
@@ -51,22 +52,7 @@ check_k8s_service() {
 }
 
 # Helper function to check ingress routing
-check_ingress_routing() {
-    local namespace=$1
-    local ingress_name=$2
-    local path=$3
-    local expected_service=$4
-    
-    local actual_service=$(kubectl -n "$namespace" get ingress "$ingress_name" -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='$path')].backend.service.name}" 2>/dev/null || echo "")
-    
-    if [ "$actual_service" = "$expected_service" ]; then
-        echo -e "${GREEN}✓ Ingress routes $path to $expected_service${NC}"
-        return 0
-    else
-        echo -e "${YELLOW}⚠ Ingress routes $path to $actual_service (expected: $expected_service)${NC}"
-        return 1
-    fi
-}
+
 
 # Helper function to check if local dev service exists
 check_dev_service() {
@@ -83,13 +69,25 @@ check_dev_service() {
 }
 
 echo ""
+
+# Get ingress routing info first
+provider_frontend_service=$(kubectl -n oc-provider get ingress oc-provider-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/')].backend.service.name}" 2>/dev/null || echo "")
+provider_backend_service=$(kubectl -n oc-provider get ingress oc-provider-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/api')].backend.service.name}" 2>/dev/null || echo "")
+client_frontend_service=$(kubectl -n oc-client get ingress oc-client-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/')].backend.service.name}" 2>/dev/null || echo "")
+client_backend_service=$(kubectl -n oc-client get ingress oc-client-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/api')].backend.service.name}" 2>/dev/null || echo "")
+
 echo "🎯 Provider Services"
 echo "-------------------"
 
 echo -n "Frontend (Local):  "
 provider_frontend_local=false
-if check_local_port 8080; then
+if lsof -i :9001 >/dev/null 2>&1; then
     provider_frontend_local=true
+    echo -e "${GREEN}✓ Running locally on port 9001${NC}"
+elif [ "$provider_frontend_service" = "oc-provider-frontend-dev" ]; then
+    echo -e "${RED}✗ Not running locally on port 9001 (required for dev service)${NC}"
+else
+    echo -e "${GRAY}○ Not running locally on port 9001 (not needed - using K8s)${NC}"
 fi
 
 echo -n "Frontend (K8s):    "
@@ -100,8 +98,13 @@ fi
 
 echo -n "Backend (Local):   "
 provider_backend_local=false
-if check_local_port 3001; then
+if lsof -i :3001 >/dev/null 2>&1; then
     provider_backend_local=true
+    echo -e "${GREEN}✓ Running locally on port 3001${NC}"
+elif [ "$provider_backend_service" = "oc-provider-backend-dev" ]; then
+    echo -e "${RED}✗ Not running locally on port 3001 (required for dev service)${NC}"
+else
+    echo -e "${GRAY}○ Not running locally on port 3001 (not needed - using K8s)${NC}"
 fi
 
 echo -n "Backend (K8s):     "
@@ -116,8 +119,13 @@ echo "-----------------"
 
 echo -n "Frontend (Local):  "
 client_frontend_local=false
-if check_local_port 9000; then
+if lsof -i :9000 >/dev/null 2>&1; then
     client_frontend_local=true
+    echo -e "${GREEN}✓ Running locally on port 9000${NC}"
+elif [ "$client_frontend_service" = "oc-client-frontend-dev" ]; then
+    echo -e "${RED}✗ Not running locally on port 9000 (required for dev service)${NC}"
+else
+    echo -e "${GRAY}○ Not running locally on port 9000 (not needed - using K8s)${NC}"
 fi
 
 echo -n "Frontend (K8s):    "
@@ -128,8 +136,13 @@ fi
 
 echo -n "Backend (Local):   "
 client_backend_local=false
-if check_local_port 3000; then
+if lsof -i :3000 >/dev/null 2>&1; then
     client_backend_local=true
+    echo -e "${GREEN}✓ Running locally on port 3000${NC}"
+elif [ "$client_backend_service" = "oc-client-backend-dev" ]; then
+    echo -e "${RED}✗ Not running locally on port 3000 (required for dev service)${NC}"
+else
+    echo -e "${GRAY}○ Not running locally on port 3000 (not needed - using K8s)${NC}"
 fi
 
 echo -n "Backend (K8s):     "
@@ -145,10 +158,15 @@ echo "--------------------------------------"
 # Provider routing
 echo "Provider:"
 echo -n "  Frontend (/):    "
-check_ingress_routing "oc-provider" "oc-provider-ingress" "/" "oc-provider-frontend"
+if [ "$provider_frontend_service" = "oc-provider-frontend-dev" ]; then
+    echo -e "${YELLOW}→ Local Frontend (via dev service)${NC}"
+elif [ "$provider_frontend_service" = "oc-provider-frontend" ]; then
+    echo -e "${BLUE}→ K8s Frontend${NC}"
+else
+    echo -e "${RED}✗ Unknown service: $provider_frontend_service${NC}"
+fi
 
 echo -n "  Backend (/api):  "
-provider_backend_service=$(kubectl -n oc-provider get ingress oc-provider-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/api')].backend.service.name}" 2>/dev/null || echo "")
 if [ "$provider_backend_service" = "oc-provider-backend-dev" ]; then
     echo -e "${YELLOW}→ Local Backend (via dev service)${NC}"
 elif [ "$provider_backend_service" = "oc-provider-backend" ]; then
@@ -160,10 +178,15 @@ fi
 # Client routing  
 echo "Client:"
 echo -n "  Frontend (/):    "
-check_ingress_routing "oc-client" "oc-client-ingress" "/" "oc-client-frontend"
+if [ "$client_frontend_service" = "oc-client-frontend-dev" ]; then
+    echo -e "${YELLOW}→ Local Frontend (via dev service)${NC}"
+elif [ "$client_frontend_service" = "oc-client-frontend" ]; then
+    echo -e "${BLUE}→ K8s Frontend${NC}"
+else
+    echo -e "${RED}✗ Unknown service: $client_frontend_service${NC}"
+fi
 
 echo -n "  Backend (/api):  "
-client_backend_service=$(kubectl -n oc-client get ingress oc-client-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/api')].backend.service.name}" 2>/dev/null || echo "")
 if [ "$client_backend_service" = "oc-client-backend-dev" ]; then
     echo -e "${YELLOW}→ Local Backend (via dev service)${NC}"
 elif [ "$client_backend_service" = "oc-client-backend" ]; then
@@ -176,25 +199,31 @@ echo ""
 echo "📊 Traffic Summary"
 echo "-----------------"
 
-# Check where traffic actually goes based on ingress
-provider_backend_service=$(kubectl -n oc-provider get ingress oc-provider-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/api')].backend.service.name}" 2>/dev/null || echo "")
-client_backend_service=$(kubectl -n oc-client get ingress oc-client-ingress -o jsonpath="{.spec.rules[0].http.paths[?(@.path=='/api')].backend.service.name}" 2>/dev/null || echo "")
+# Use already detected ingress routing info
 
 echo -n "Provider Traffic:  "
-if [ "$provider_backend_service" = "oc-provider-backend-dev" ]; then
+if [ "$provider_frontend_service" = "oc-provider-frontend-dev" ] && [ "$provider_backend_service" = "oc-provider-backend-dev" ]; then
+    echo -e "${YELLOW}Full Local Development${NC}"
+elif [ "$provider_frontend_service" = "oc-provider-frontend-dev" ] && [ "$provider_backend_service" = "oc-provider-backend" ]; then
+    echo -e "${YELLOW}Frontend Local + Backend K8s${NC}"
+elif [ "$provider_frontend_service" = "oc-provider-frontend" ] && [ "$provider_backend_service" = "oc-provider-backend-dev" ]; then
     echo -e "${YELLOW}Frontend K8s + Backend Local${NC}"
-elif [ "$provider_backend_service" = "oc-provider-backend" ]; then
+elif [ "$provider_frontend_service" = "oc-provider-frontend" ] && [ "$provider_backend_service" = "oc-provider-backend" ]; then
     echo -e "${BLUE}Full Kubernetes${NC}"
 else
     echo -e "${RED}Configuration Issue${NC}"
 fi
 
 echo -n "Client Traffic:    "
-if [ "$client_backend_service" = "oc-client-backend-dev" ]; then
-    echo -e "${YELLOW}Frontend K8s + Backend Local${NC}" 
-elif [ "$client_backend_service" = "oc-client-backend" ]; then
+if [ "$client_frontend_service" = "oc-client-frontend-dev" ] && [ "$client_backend_service" = "oc-client-backend-dev" ]; then
+    echo -e "${YELLOW}Full Local Development${NC}"
+elif [ "$client_frontend_service" = "oc-client-frontend-dev" ] && [ "$client_backend_service" = "oc-client-backend" ]; then
+    echo -e "${YELLOW}Frontend Local + Backend K8s${NC}"
+elif [ "$client_frontend_service" = "oc-client-frontend" ] && [ "$client_backend_service" = "oc-client-backend-dev" ]; then
+    echo -e "${YELLOW}Frontend K8s + Backend Local${NC}"
+elif [ "$client_frontend_service" = "oc-client-frontend" ] && [ "$client_backend_service" = "oc-client-backend" ]; then
     echo -e "${BLUE}Full Kubernetes${NC}"
-else  
+else
     echo -e "${RED}Configuration Issue${NC}"
 fi
 
@@ -227,5 +256,4 @@ echo "./scripts/use-local-provider-backend.sh   - Switch provider backend to loc
 echo "./scripts/use-k8s-provider-backend.sh     - Switch provider backend to K8s"
 echo "./scripts/use-local-client-backend.sh     - Switch client backend to local"  
 echo "./scripts/use-k8s-client-backend.sh       - Switch client backend to K8s"
-echo "./scripts/local-backend-env.sh            - Show local backend env vars"
 
