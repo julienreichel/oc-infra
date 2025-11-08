@@ -89,6 +89,12 @@ create_db_secrets "oc-client" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_
 echo "==> Creating config secrets..."
 kubectl -n oc-provider create secret generic config \
   --from-literal=CLIENT_BASE_URL="https://client.localhost/api/" \
+  --from-literal=NODE_TLS_REJECT_UNAUTHORIZED="0" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Create config secret for client namespace (for any client backend configs)
+kubectl -n oc-client create secret generic config \
+  --from-literal=NODE_TLS_REJECT_UNAUTHORIZED="0" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Create dummy registry secrets for local development (since we use local images)
