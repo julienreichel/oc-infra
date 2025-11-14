@@ -6,12 +6,24 @@ on:
   pull_request:
 
 jobs:
-  ensure-ghcr-secrets:
-    name: Ensure GHCR secrets exist per namespace
+  set-matrix:
+    name: Define namespace matrix (single source of truth)
     runs-on: ubuntu-latest
+    outputs:
+      ns_json: ${{ steps.out.outputs.ns_json }}
+    steps:
+      - name: Emit namespace list as JSON
+        id: out
+        run: |
+          echo 'ns_json=["oc-provider","oc-client","oc-dev-provider","oc-dev-client"]' >> "$GITHUB_OUTPUT"
+
+  ensure-ghcr-secrets:
+    name: Ensure secrets exist per namespace
+    runs-on: ubuntu-latest
+    needs: [set-matrix]
     strategy:
       matrix:
-        ns: [ oc-provider, oc-client, oc-dev-provider, oc-dev-client ]  # add more envs as needed
+        ns: ${{ fromJson(needs.set-matrix.outputs.ns_json) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +59,6 @@ jobs:
         shell: bash
         run: |
           ns="${{ matrix.ns }}"
-
           DB="db"
           USR="app"
           PWD="${{ secrets.DB_PASSWORD }}"
@@ -62,8 +73,8 @@ jobs:
             --from-literal=DATABASE_URL="postgresql://${USR}:${PWD}@pg:5432/${DB}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-  deploy:
-    name: Deploy manifests
+  deploy-infra:
+    name: Deploy infra manifests + Helm (Traefik, cert-manager)
     runs-on: ubuntu-latest
     needs: [ensure-ghcr-secrets]
     steps:
@@ -75,21 +86,77 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
       - name: Write kubeconfig
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBECONFIG_CONTENT }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Deploy manifests
+      - name: Add Helm repos (Traefik, cert-manager, Bitnami)
         run: |
-          # Namespaces & shared infra
+          helm repo add traefik https://traefik.github.io/charts
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+
+      - name: Reconcile Traefik (IngressController) via Helm
+        run: |
+          kubectl get ns oc-gateway >/dev/null 2>&1 || kubectl create namespace oc-gateway
+          helm upgrade --install traefik traefik/traefik             --namespace oc-gateway             --set ingressClass.enabled=true             --set ingressClass.isDefaultClass=true             --set service.type=LoadBalancer             --wait --atomic --timeout 10m
+
+      - name: Reconcile cert-manager (CRDs + controller) via Helm
+        run: |
+          kubectl get ns cert-manager >/dev/null 2>&1 || kubectl create namespace cert-manager
+          helm upgrade --install cert-manager jetstack/cert-manager             --namespace cert-manager             --set installCRDs=true             --wait --atomic --timeout 10m
+
+      - name: Deploy shared manifests (namespaces, ClusterIssuer)
+        run: |
           kubectl apply -f k8s/namespace.yaml
           kubectl apply -f k8s/clusterissuer-letsencrypt-prod.yaml
 
-      - name: Deploy DBs (same manifest, different namespaces)
-        shell: bash
+  deploy-db:
+    name: Deploy PostgreSQL per namespace (Bitnami)
+    runs-on: ubuntu-latest
+    needs: [deploy-infra, set-matrix]
+    strategy:
+      matrix:
+        ns: ${{ fromJson(needs.set-matrix.outputs.ns_json) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Write kubeconfig
         run: |
-          for ns in oc-provider oc-dev-provider oc-client oc-dev-client; do
-            kubectl -n "$ns" apply -f k8s/postgres.yaml
-          done
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Add Bitnami repo
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl get ns "${{ matrix.ns }}" >/dev/null 2>&1 || kubectl create ns "${{ matrix.ns }}"
+
+      - name: Deploy/Upgrade PostgreSQL in namespace
+        env:
+          PWD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          helm upgrade --install pg bitnami/postgresql             --namespace "${{ matrix.ns }}"             --set auth.username=app             --set auth.password="${PWD}"             --set auth.database=db             --set primary.persistence.enabled=false             --wait --atomic --timeout 10m
