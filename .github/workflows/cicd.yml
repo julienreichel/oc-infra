@@ -61,16 +61,16 @@ jobs:
           ns="${{ matrix.ns }}"
           DB="db"
           USR="app"
-          PWD="${{ secrets.DB_PASSWORD }}"
+          DB_PASS="${{ secrets.DB_PASSWORD }}"
 
           kubectl -n "$ns" create secret generic db-secret \
             --from-literal=POSTGRES_DB="$DB" \
             --from-literal=POSTGRES_USER="$USR" \
-            --from-literal=POSTGRES_PASSWORD="$PWD" \
+            --from-literal=POSTGRES_PASSWORD="$DB_PASS" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl -n "$ns" create secret generic db \
-            --from-literal=DATABASE_URL="postgresql://${USR}:${PWD}@pg:5432/${DB}" \
+            --from-literal=DATABASE_URL="postgresql://${USR}:${DB_PASS}@pg:5432/${DB}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
   deploy-infra:
@@ -157,13 +157,13 @@ jobs:
 
       - name: Deploy/Upgrade PostgreSQL in namespace
         env:
-          PWD: ${{ secrets.DB_PASSWORD }}
+          DB_PASS: ${{ secrets.DB_PASSWORD }}
         run: |
           helm upgrade --install pg bitnami/postgresql \
             --namespace "${{ matrix.ns }}" \
             --set fullnameOverride=pg \
             --set auth.username=app \
-            --set auth.password="${PWD}" \
+            --set auth.password="${DB_PASS}" \
             --set auth.database=db \
             --set primary.persistence.enabled=false \
             --wait --atomic --timeout 10m
