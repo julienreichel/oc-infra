@@ -38,7 +38,6 @@ helm upgrade --install traefik traefik/traefik \
   --set service.type=LoadBalancer \
   --set providers.kubernetesIngress.allowExternalNameServices=true
 
-
 # 4. cert-manager
 echo "==> Installing cert-manager..."
 helm repo add jetstack https://charts.jetstack.io >/dev/null
@@ -51,7 +50,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 echo "==> Applying local self-signed ClusterIssuer (selfsigned-local)…"
 kubectl apply -f "${K8S_DIR}/clusterissuer-selfsigned-local.yaml"
 
-# 6. local Postgres
+# 6. local Postgres via Helm (Bitnami), keeping service DNS as 'pg'
 create_db_secrets () {
   local ns="$1"
   local db_name="$2"
@@ -59,31 +58,31 @@ create_db_secrets () {
   local db_pass="$4"
 
   echo "==> Creating/Updating DB secrets in namespace '${ns}'"
-  # Secret used by the Postgres pod
+  # Secret used by apps (DATABASE_URL), service is 'pg' within the same ns
+  kubectl -n "${ns}" create secret generic db \
+    --from-literal=DATABASE_URL="postgresql://${db_user}:${db_pass}@pg:5432/${db_name}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Secret used by the Postgres chart init (mirrors CI shape)
   kubectl -n "${ns}" create secret generic db-secret \
     --from-literal=POSTGRES_DB="${db_name}" \
     --from-literal=POSTGRES_USER="${db_user}" \
     --from-literal=POSTGRES_PASSWORD="${db_pass}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  # Secret often used by apps (DATABASE_URL), service is 'pg' within the same ns
-  kubectl -n "${ns}" create secret generic db \
-    --from-literal=DATABASE_URL="postgresql://${db_user}:${db_pass}@pg:5432/${db_name}" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-  # Create namespace-specific secret expected by deployments
+  # Optional namespace-specific secret expected by some deployments
   kubectl -n "${ns}" create secret generic "${ns}-db" \
     --from-literal=DATABASE_URL="postgresql://${db_user}:${db_pass}@pg:5432/${db_name}" \
     --dry-run=client -o yaml | kubectl apply -f -
 }
 
-# Local defaults (same across namespaces; change if you want different creds per ns)
+# Local defaults
 LOCAL_DB_NAME="db"
 LOCAL_DB_USER="app"
-LOCAL_DB_PASS="StrongLocalPass"   # or read from env if you prefer
+LOCAL_DB_PASS="${LOCAL_DB_PASS:-StrongLocalPass}"   # allow override via env
 
 create_db_secrets "oc-provider" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
-create_db_secrets "oc-client" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
+create_db_secrets "oc-client"   "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
 
 # Create config secrets for local development
 echo "==> Creating config secrets..."
@@ -92,12 +91,11 @@ kubectl -n oc-provider create secret generic config \
   --from-literal=NODE_TLS_REJECT_UNAUTHORIZED="0" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Create config secret for client namespace (for any client backend configs)
 kubectl -n oc-client create secret generic config \
   --from-literal=NODE_TLS_REJECT_UNAUTHORIZED="0" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Create dummy registry secrets for local development (since we use local images)
+# Create dummy registry secrets for local development (we load local images)
 echo "==> Creating registry secrets..."
 for ns in oc-provider oc-client; do
   kubectl -n "$ns" create secret docker-registry ghcr-creds \
@@ -107,15 +105,38 @@ for ns in oc-provider oc-client; do
     --dry-run=client -o yaml | kubectl apply -f -
 done
 
-echo "==> Deploying provider Postgres..."
-kubectl apply -n oc-provider -f "${K8S_DIR}/postgres.yaml"
+# Install Bitnami Postgres with service name 'pg' (fullnameOverride)
+echo "==> Installing local Postgres via Helm (Bitnami) with service 'pg'…"
+helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null
+helm repo update >/dev/null
 
-echo "==> Deploying client Postgres..."
-kubectl apply -n oc-client -f "${K8S_DIR}/postgres.yaml"
+install_local_pg () {
+  local ns="$1"
+  local db_name="$2"
+  local db_user="$3"
+  local db_pass="$4"
 
-echo "==> Waiting for Postgres pods to be ready..."
-kubectl wait --for=condition=ready pod -l app=pg -n oc-provider --timeout=60s || true
-kubectl wait --for=condition=ready pod -l app=pg -n oc-client --timeout=60s || true
+  kubectl get ns "$ns" >/dev/null 2>&1 || kubectl create namespace "$ns"
+
+  # Use fullnameOverride=pg so Service DNS is 'pg'
+  helm upgrade --install pg bitnami/postgresql \
+    --namespace "$ns" \
+    --set fullnameOverride=pg \
+    --set auth.database="$db_name" \
+    --set auth.username="$db_user" \
+    --set auth.password="$db_pass" \
+    --set primary.persistence.enabled=false \
+    --wait --atomic --timeout 10m
+
+  # Wait for pods to be ready using labels (chart-consistent)
+  echo "==> Waiting for Postgres pods in '$ns' to be ready…"
+  kubectl -n "$ns" wait --for=condition=ready pod \
+    -l app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=pg \
+    --timeout=120s || true
+}
+
+install_local_pg "oc-provider" "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
+install_local_pg "oc-client"   "${LOCAL_DB_NAME}" "${LOCAL_DB_USER}" "${LOCAL_DB_PASS}"
 
 # 7. Deploy apps (call the other script)
 echo "==> Deploying apps (calling redeploy-apps.sh)…"
@@ -127,33 +148,21 @@ echo "==> Running database migrations..."
 run_migration_if_exists() {
   local ns="$1"
   local app_dir="$2"
-  
+
   if [[ -f "${app_dir}/k8s/migration-job.yaml" ]]; then
     echo "==> Running migration for ${ns}..."
-    
-    # Get job name from manifest
     JOB_NAME=$(grep -E "^  name:" "${app_dir}/k8s/migration-job.yaml" | awk '{print $2}')
-    
-    # Get the app name from the directory path
     APP_NAME=$(basename "${app_dir}")
-    
-    # Clean up any existing migration job
     kubectl delete job "${JOB_NAME}" -n "${ns}" --ignore-not-found=true
     kubectl wait --for=delete job/"${JOB_NAME}" -n "${ns}" --timeout=60s || true
-    
-    # Apply migration job with image substitution
     sed "s|IMAGE_PLACEHOLDER|local/${APP_NAME}:dev|g" "${app_dir}/k8s/migration-job.yaml" | \
       kubectl -n "${ns}" apply -f -
-    
-    # Wait for migration to complete
     echo "   Waiting for migration job '${JOB_NAME}' to complete..."
     kubectl -n "${ns}" wait --for=condition=complete job/"${JOB_NAME}" --timeout=300s
-    
-    # Check status and show logs if failed
     JOB_STATUS=$(kubectl -n "${ns}" get job "${JOB_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "False")
     if [[ "$JOB_STATUS" != "True" ]]; then
       echo "   ⚠️  Migration job failed. Logs:"
-      kubectl -n "${ns}" logs job/"${JOB_NAME}" --tail=20 || true
+      kubectl -n "${ns}" logs job/"${JOB_NAME}" --tail=50 || true
     else
       echo "   ✅ Migration completed successfully"
     fi
@@ -162,9 +171,8 @@ run_migration_if_exists() {
   fi
 }
 
-# Run migrations for each backend that has a migration job
 run_migration_if_exists "oc-provider" "${WORKSPACE_DIR}/oc-provider-backend"
-run_migration_if_exists "oc-client" "${WORKSPACE_DIR}/oc-client-backend"
+run_migration_if_exists "oc-client"   "${WORKSPACE_DIR}/oc-client-backend"
 
 echo ""
 echo "======================================================"

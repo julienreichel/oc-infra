@@ -159,4 +159,11 @@ jobs:
         env:
           PWD: ${{ secrets.DB_PASSWORD }}
         run: |
-          helm upgrade --install pg bitnami/postgresql             --namespace "${{ matrix.ns }}"             --set auth.username=app             --set auth.password="${PWD}"             --set auth.database=db             --set primary.persistence.enabled=false             --wait --atomic --timeout 10m
+          helm upgrade --install pg bitnami/postgresql \
+            --namespace "${{ matrix.ns }}" \
+            --set fullnameOverride=pg \
+            --set auth.username=app \
+            --set auth.password="${PWD}" \
+            --set auth.database=db \
+            --set primary.persistence.enabled=false \
+            --wait --atomic --timeout 10m
